@@ -1,0 +1,610 @@
+---
+title: 'Group Project: Milestone 3'
+subtitle: 'Iowa Liquor Sales 2015'
+authors: "Antony Richardson, Monica Sequerra, Alex Molner"
+date: "October 22, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+For the project we decided to look at the "Iowa Liquor Sales" dataset. This data set has 12 million entries that includes information such as what product was sold, where it was store it was sold, where the store was located, cost of the product, when the product was sold, and so forth. With this information, we can help liquor-selling businesses determine which products are preferred to be bought by customers on which days and at what times. We are also assuming that all stores have a Sunday Sales Privilege and can sell and serve products on Sunday.
+
+
+With all that in mind these are the questions we are hoping to answer.
+
+. Which cities sell the most/least alcohol
+
+. What is the correlation between bottles sold and time of the year?
+
+. What date of the year sells the most/least alcohol?
+
+. How much profit do prodcut bring in?
+
+. What products sell the most/least bottles?
+
+. Which months sell the most bottles?
+
+. How many bottles are likely to be sold in the future?
+
+
+As a brief bit of background, Iowa is an alcohol beverage control state, meaning that the state maintains a monopoly on wholesaling of alcohol throughout the State. Effectively, private retailers must purchase their alcohol from the state before selling it to individual consumers. With the dataset that we have we would like to use it's information to help private retailers to be more informed about consumer decisions and its results. With this knowledge, private retailers will be able to better stock their shelves during the appropriate season, from the right vendors. This is an important business problem to analyze because it can help improve liquor sales for the whole state of Iowa, and make products cheaper for the consumer.  
+
+## Data Source and Collection
+
+The dataset was downloaded from kaggle.com and was gathered by the Iowa Department of Commerce. In Iowa every store that sells alcohol in bottled form must hold a Class "E" liqour license and every sale must be logged in the Commerce department system. This data is a fairly complete representation of alcohol sales in the state of Iowa from the years 2011 to 2017. Although we are only going to be using the year 2015 for our data analysis.
+
+Here is a link to the dataset: https://www.kaggle.com/residentmario/iowa-liquor-sales
+
+## R Code Milestone 2
+
+##_________________________________________________________________##
+
+# Clean Environment
+
+```{r}
+rm(list=ls())
+```
+
+#Load Packages
+
+```{r}
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(stargazer)
+library(caret)
+library(neuralnet)
+library(pscl)
+```
+
+#Call Data
+
+```{r}
+df<-read.csv(file="Iowa_Liquor_Sales.csv",header=TRUE)
+#df<-read.csv(file="liq_test.csv",header=TRUE)
+head(df)
+```
+
+#Remove all rows that are not the year 2015
+
+```{r}
+df <- df[!grepl("2017", df$Date),]
+df <- df[!grepl("2016", df$Date),]
+df <- df[!grepl("2014", df$Date),]
+df <- df[!grepl("2013", df$Date),]
+df <- df[!grepl("2012", df$Date),]
+df <- df[!grepl("2011", df$Date),]
+```
+
+
+#Check if there are values less than 1 in important columns
+
+We are specifically looking to see if there are values less than 1 in the columns Bottles.Sold, Volume.Sold..Liters., and Volume.Sold..Gallons.
+```{r}
+names(which(sapply(df, function(x) any(is.numeric(x)<1))))
+```
+The columns we were checking for didn't pop up, so we are good.
+
+
+#Look for and remove Unwanted Columns
+
+```{r}
+names(which(sapply(df, function(x) any(is.na(x)))))
+```
+
+```{r}
+df <- within(df, rm(Category, Category.Name, County.Number))
+head(df)
+```
+
+#Extract months from date
+
+```{r}
+df$Month <- format(as.Date(df$Date, format="%m/%d/%Y"),"%m")
+```
+
+#Change Data types
+
+```{r}
+df$Sale..Dollars. = as.numeric(gsub("[\\$,]", "", df$Sale..Dollars.))
+```
+
+#Summary Statistics
+
+```{r}
+summary(df)
+```
+
+
+##_________________________________________________________________##
+
+
+#Total spent over the year(in millions)
+
+```{r}
+sum(df$Sale..Dollars./1000000)
+```
+
+
+##_________________________________________________________________##
+
+
+#Total volume over the year in liters/gallons
+
+#Liters(in millions)
+```{r}
+sum(df$Volume.Sold..Liters./1000000)
+```
+
+
+
+#Gallons(in millions)
+```{r}
+sum(df$Volume.Sold..Gallons./1000000)
+```
+
+
+##_________________________________________________________________##
+
+
+#What date sold the most
+
+```{r}
+dateSale <- df %>% 
+  group_by(Date) %>% 
+  summarise(Sold = sum(Sale..Dollars.))
+dateSale <- dateSale[order(dateSale$Sold, decreasing = TRUE), ]
+dateSale <- head(dateSale)
+
+```
+
+```{r}
+ggplot(data=dateSale, aes(x=reorder(Date, -Sold), y=Sold)) +
+  ylab("Highest Amount Sold in Dollars")+
+  geom_bar(stat="identity", fill="maroon")+
+  geom_text(aes(label=Sold), vjust=-0.3, size=3.5)+
+  ggtitle("Highest Amount Sold by Date") +
+  theme_minimal()
+```
+
+According to this barchart the 15th of June had the most sales in dollars recorded followed by the 1st of December, 18th of November, 30th of November, 12th of October, and finally the 19th of May. There are some dates that make sense for high sales such as the 11th of November which is the weekend before thanksgiving and the 15th of June which is the beginning of summer for alot of people. There are other dates such as the 12th of October and 1st of December that have no important dates around, so one would assume these are just coincidences for the state of Iowa.
+
+
+##_________________________________________________________________##
+
+
+#What Dates Sold the Least
+
+```{r}
+dateSaleL <- df %>% 
+  group_by(Date) %>% 
+  summarise(Sold = sum(Sale..Dollars.))
+dateSaleL <- dateSaleL[order(dateSaleL$Sold, decreasing = FALSE), ]
+dateSaleL <- head(dateSaleL)
+```
+
+```{r}
+ggplot(data=dateSaleL, aes(x=reorder(Date, -Sold), y=Sold)) +
+  ylab("Amount Sold in Dollars")+
+  geom_bar(stat="identity", fill="maroon")+
+  geom_text(aes(label=Sold), vjust=-0.3, size=3.5)+
+  ggtitle("Lowest Amount Sold by Date") +
+  theme_minimal()
+```
+
+On the opposite side of the spectrum we have the dates that made the least amount of money in sales. Starting from the lowest we have the 19th of June, 30th of October, 1st of May, 31st of July, 6th of March, and 6th of Febuary. These dates are suspiciously low which could indicate issues with the data set especially for certain dates like the 30th of october which is the day before halloween. I would expect dates such as this to have realatively high sales.
+
+
+##_________________________________________________________________##
+
+
+#Correlation between time of year and amount sold
+
+```{r}
+timeSold <- df %>% 
+  group_by(Date) %>% 
+  summarise(Num.Bottles = sum(Bottles.Sold))
+timeSold <- timeSold[order(timeSold$Date, decreasing = TRUE), ]
+```
+
+```{r}
+ggplot(timeSold, aes(x=Date, y=Num.Bottles)) +
+  xlab("< Early    (Day of the Year)    Late >")+
+  ylab("Number of Bottles Sold")+
+  geom_point()+
+  ggtitle("Relation Between Time of Year and Bottles Sold") +
+  theme( axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())+
+  geom_smooth(method=lm)
+```
+
+This graph represents the relationship between the Date(time of year) and the number of bottles sold. Off the bat there are some immediate outliers that pop up at the bottom of the graph. These outliers are most likely days whose data was entered incorrectly as only selling around 1 or so bottles. We know that this can't be zero since we already checked for that. This would explain why the previous bar chart had such low numbers.
+
+If we ignore these outliers you can see that the remainder of the the data sits mostly between 75,000 and 125,000 bottles sold. I would say this is a linear relationship that is mostly constant with a few days that are significantly higher or lower that the average around 100,000.
+
+
+##_________________________________________________________________##
+
+
+#What item made the most money
+
+```{r}
+itemSale <- df %>% 
+  group_by(Item.Description) %>% 
+  summarise(Sold = sum(Sale..Dollars.))
+itemSale <- itemSale[order(itemSale$Sold, decreasing = TRUE), ]
+itemSale <- head(itemSale)
+```
+
+```{r}
+ggplot(data=itemSale, aes(x=reorder(Item.Description, -Sold), y=Sold)) +
+  xlab("Product")+
+  ylab("Amount Sold in Dollars")+
+  geom_bar(stat="identity", fill="maroon")+
+  geom_text(aes(label=Sold), vjust=-0.3, size=3.5)+
+  ggtitle("Highest Amount Sold by Product") +
+  scale_x_discrete(labels = c("Black Velvet" = "Black Velvet", "Captain Morgan Spiced Rum" = "Captain Morgan", "Crown Royal Canadian Whisky" = "Crown Royal", "Fireball Cinnamon Whiskey" = "Fireball", "Hawkeye Vodka" = "Hawkeye Vodka", "Jack Daniels Old #7 Black Lbl" = "Jack Daniels Blk"))+
+  theme_minimal()
+```
+
+This barchart shows us the top six items based on the amount of money they brought in. According to this graph Black Velvet brought in the most money in Iowa in the year 2015. This probably means its the most popular, but its possible its just exceptionaly expensive. This will have to be uncovered in another graph. Continuing down the list we have Jack Daniels Black Label, Captain Morgan Spiced Rum, Fireball Cinnamon Whiskey, Crown Royal Canadian Whisky, and Hawkeye Vodka.
+
+
+##_________________________________________________________________##
+
+
+#What item made the least money
+
+```{r}
+itemSaleL <- df %>% 
+  group_by(Item.Description) %>% 
+  summarise(Sold = sum(Sale..Dollars.))
+itemSaleL <- itemSaleL[order(itemSaleL$Sold, decreasing = FALSE), ]
+itemSaleL <- head(itemSaleL)
+```
+
+```{r}
+ggplot(data=itemSaleL, aes(x=reorder(Item.Description, -Sold), y=Sold)) +
+  xlab("Product (HM = Hiram Walker)")+
+  ylab("Amount Sold in Dollars")+
+  geom_bar(stat="identity", fill="maroon")+
+  geom_text(aes(label=Sold), vjust=-0.3, size=3.5)+
+  ggtitle("Lowest Amount Sold by Product") +
+  scale_x_discrete(labels = c("Belvedere Red" = "Belvedere Red", "Crystal Head Vodka Mini" = "Crystal Head Mini", "Hiram Walker Blue Curacao 3pak" = "HM Blue", "Hiram Walker Creme De Cacao White 3pak" = "HM Cacao", "Hiram Walker Creme De Menthe White 3 Pak" = "HM Menthe", "Hiram Walker Sloe Gin 3-Pak" = "HM Gin"))+
+  theme_minimal()
+```
+
+This graph shows the opposite end of the graph with the six products that brought in the least amount of money. According to this graph all of these products only sold 1 for the entire year and brought in the amount it costs to buy 1. This is most likely a mistake in the dataset, but it can't be ruled out that the state of Iowa just hates these products.
+
+
+##_________________________________________________________________##
+
+
+#What item was the most popular
+
+```{r}
+itemPop <- df %>% 
+  group_by(Item.Description) %>% 
+  summarise(Num.Bottles = sum(Bottles.Sold))
+itemPop <- itemPop[order(itemPop$Num.Bottles, decreasing = TRUE), ]
+itemPop <- head(itemPop)
+```
+
+```{r}
+ggplot(data=itemPop, aes(x=reorder(Item.Description, -Num.Bottles), y=Num.Bottles)) +
+  xlab("Product")+
+  ylab("Number of Bottles")+
+  geom_bar(stat="identity", fill="maroon")+
+  geom_text(aes(label=Num.Bottles), vjust=-0.3, size=3.5)+
+  ggtitle("Bottles Sold by Product") +
+  scale_x_discrete(labels = c("Black Velvet" = "Black Velvet", "Captain Morgan Spiced Rum" = "Captain Morgan", "Five O'clock Vodka" = "Five O'clock Vodka", "Fireball Cinnamon Whiskey" = "Fireball", "Hawkeye Vodka" = "Hawkeye Vodka", "Jack Daniels Old #7 Black Lbl" = "Jack Daniels Black"))+
+  theme_minimal()
+```
+
+This graph is very similar to the Highest Amount Sold by Product, but instead of dealing with dollars we are looking at the physical bottles sold. You would expect this graph to be identical to that one, but it's not. This because we are dealing with the bottles not prices, so these products that didn't appear earlier are most likely very cheap so they can move more bottles and bring in less money. Starting off we have Black Velvet which is still 1st with 1145367 bottles sold. Then we have Hawkeye Vodka taking 2nd instead of 6th. Captain Morgan is still 3rd followed by a new prodcut Five O'clock Vodka in 4th. Finally we have Fireball and Jack Daniels in 5th and 6th instead of 4th and 2nd.
+
+
+##_________________________________________________________________##
+
+
+#Compare cities to total bottles
+
+```{r}
+citySales <- df %>% 
+  group_by(City) %>% 
+  summarise(Num.Bottles = sum(Bottles.Sold))
+citySales <- citySales[order(citySales$Num.Bottles, decreasing = TRUE), ]
+citySales <- head(citySales)
+```
+
+```{r}
+ggplot(data=citySales, aes(x=reorder(City, -Num.Bottles), y=Num.Bottles)) +
+  ylab("Number of Bottles")+
+  geom_bar(stat="identity", fill="maroon")+
+  geom_text(aes(label=Num.Bottles), vjust=-0.3, size=3.5)+
+  ggtitle("Bottles Sold by City") +
+  theme_minimal()
+```
+
+This graph shows us which cities sold the highest number of bottles. This graph is no suprise since the six cities with highest amount of bottles sold are also the six highest in terms of population. What is interesting is that Siox City has less liqouri purchased than both Iowa City and Waterloo. Waterloo has 15,000 less people than Sioux City yet there were 211,000 more bottles of liqour purchased that year. This could be because of a number of factors such as location, culture, and so on.
+
+Six Largest Cities in Iowa(by population)
+1.) Des Moines(217,521)
+2.) Cedar Rapids(132,228)
+3.) Davenport(102,320)
+4.) Sioux City(82,514)
+5.) Iowa City(75,798)
+6.) Waterloo(67,587)
+
+
+##_________________________________________________________________##
+
+
+#Compare cities to total volume
+
+```{r}
+cityVol <- df %>% 
+  group_by(City) %>% 
+  summarise(Volume.Gallons = sum(Volume.Sold..Gallons.))
+cityVol <- cityVol[order(cityVol$Volume.Gallons, decreasing = TRUE), ]
+cityVol <- head(cityVol)
+```
+
+```{r}
+ggplot(data=cityVol, aes(x=reorder(City, -Volume.Gallons), y=Volume.Gallons)) +
+  ylab("Gallons Sold")+
+  geom_bar(stat="identity", fill="maroon")+
+  geom_text(aes(label=Volume.Gallons), vjust=-0.3, size=3.5)+
+  ggtitle("Gallons Sold by City") +
+  theme_minimal()
+```
+
+This graph measures the total gallons worth of liqour sold these cities. It is faily similar to the bottles graph except for the last three. There is a significantly smaller gap between them than there was in the previous graph. This could be because cities such as Waterloo were buying more bottles, but they were in much smaller sizes.
+
+
+##_________________________________________________________________##
+
+
+#Compare months and Bottles
+
+```{r}
+monthBot <- df %>% 
+  group_by(Month) %>% 
+  summarise(Num.Bottles = sum(Bottles.Sold))
+monthBot <- monthBot[order(monthBot$Num.Bottles, decreasing = TRUE), ]
+```
+
+```{r}
+ggplot(data=monthBot, aes(x=reorder(Month, -Num.Bottles), y=Num.Bottles)) +
+  ylab("Number of Bottles")+
+  geom_bar(stat="identity", fill="maroon")+
+  geom_text(aes(label=Num.Bottles), vjust=-0.3, size=3.5)+
+  ggtitle("Bottles Sold by Month") +
+  theme_minimal()
+```
+
+This graph shows the amount of bottles sold per each month of 2015. According to this graph December and June sold a noticably larger amount of bottles. This makes sense since liquor sales would be expected to rise around the holiday season and the beginning of summer when people are spending a larger amount of time partying. January seems to be noticably lower than other months which could be do to new years resolutions or people staying in more.
+
+
+##_________________________________________________________________##
+
+
+#Compare months and volume in Gallons
+
+```{r}
+monthGal <- df %>% 
+  group_by(Month) %>% 
+  summarise(Volume.Gallons = sum(Volume.Sold..Gallons.))
+monthGal <- monthGal[order(monthGal$Volume.Gallons, decreasing = TRUE), ]
+```
+
+```{r}
+ggplot(data=monthGal, aes(x=reorder(Month, -Volume.Gallons), y=Volume.Gallons)) +
+  ylab("Gallons")+
+  geom_bar(stat="identity", fill="maroon")+
+  geom_text(aes(label=Volume.Gallons), vjust=-0.3, size=3.5)+
+  ggtitle("Gallons Sold by Month") +
+  theme_minimal()
+```
+
+Finnaly we have a table mimicking the last one, but in gallons instead of total bottles. There are some columns that have shifted up or down slightly, but there are not notable differences between the two.
+
+## R Code Milestone 3
+
+##_________________________________________________________________##
+
+#Data Exploration
+
+#Edit Variables
+
+```{r}
+df <- na.omit(df)
+```
+
+
+```{r}
+df$State.Bottle.Retail <- as.numeric(df$State.Bottle.Retail)
+df$Bottles.Sold <- as.numeric(df$Bottles.Sold)
+df$Bottle.Volume..ml. <- as.numeric(df$Bottle.Volume..ml.)
+df$State.Bottle.Cost <- as.numeric(df$State.Bottle.Cost)
+df$Sale..Dollars. <- as.numeric(df$Sale..Dollars.)
+df$Volume.Sold..Gallons. <- as.numeric(df$Volume.Sold..Gallons.)
+
+```
+
+#Covariance between the selling price of bottles and bottles sold
+
+```{r}
+cor(df$State.Bottle.Retail,df$Bottles.Sold)
+```
+
+#Covariance between the state cost for a bottle and the size of the bottle
+
+```{r}
+cor(df$Bottle.Volume..ml.,df$State.Bottle.Cost)
+```
+
+#Covariance between the total sale and volume sold in gallons
+
+```{r}
+cor(df$Sale..Dollars.,df$Volume.Sold..Gallons.)
+```
+
+#Regress bottle retail on bottles sold
+
+```{r}
+model1 <- lm(Bottles.Sold ~ State.Bottle.Retail, data = df)
+```
+
+```{r}
+stargazer(model1, type = "text", star.cutoffs = c(0.05, 0.01, 0.001),
+          title="Linear Regression", digits=4)
+```
+
+The relationship between Bottles sold and the retail price is statistically significant.
+
+##_________________________________________________________________##
+
+#Regress cost of a bottles on the bottle size
+
+```{r}
+model2 <- lm(State.Bottle.Cost ~ Bottle.Volume..ml., data = df)
+```
+
+```{r}
+stargazer(model2, type = "text", star.cutoffs = c(0.05, 0.01, 0.001),
+          title="Multiple Linear Regression", digits=4)
+```
+
+The relationship between the cost of bottles through the state and the size of the bottle is statistically significant.
+
+##_________________________________________________________________##
+
+#Regress total sale on volume sold
+
+```{r}
+model3 <- lm(Sale..Dollars. ~ Volume.Sold..Gallons., data = df)
+```
+
+```{r}
+stargazer(model3, type = "text", star.cutoffs = c(0.05, 0.01, 0.001),
+          title="Multiple Linear Regression", digits=4)
+```
+
+The relationship between the amount of a sale and the volume sold in gallons is also significanly significant.
+
+##_________________________________________________________________##
+
+#Predictive Analysis
+
+#Summary
+
+```{r}
+preprocessParams <- preProcess(df, method = c("range"))
+print(preprocessParams)
+df_scaled <- predict(preprocessParams, df)
+summary(df_scaled)
+```
+
+#Data Partitioning 80/20 Split
+
+```{r}
+set.seed(1234)
+trainIndex <- createDataPartition(df_scaled$Volume.Sold..Gallons., p = .8, list = FALSE)
+head(trainIndex)
+
+train_data <- df_scaled[ trainIndex,]
+test_data  <- df_scaled[-trainIndex,]
+```
+
+#Neuralnetwork model
+
+This code worked when given only 1000 rows, but when using the entire 2.2 million rows it took far too long to compute (2 hours and still didn't finish).
+
+f <- as.formula(Volume.Sold..Gallons. ~ Bottle.Volume..ml. + State.Bottle.Retail + Bottles.Sold + Sale..Dollars. + Pack)
+nn_fit_2 <- neuralnet(f, data = train_data, hidden = c(5,3), linear.output=TRUE)
+summary(nn_fit_2)
+
+plot(nn_fit_2,rep="best", cex=0.8)
+
+nn_fit_1 <- neuralnet(f, data = train_data, hidden = 6)
+summary(nn_fit_1)
+
+plot(nn_fit_1, rep="best",cex=0.8)
+
+
+#Mutliple Linear Regression
+
+```{r}
+stargazer(df, type = "text", summary = NULL,
+          title="Multiple Linear Regression", digits=4)
+```
+
+#Create a 10-fold cross-validation
+
+```{r}
+fitControl <- trainControl(method = "cv",number = 10)
+```
+
+#Use LM train function for Bottles.Sold
+
+```{r}
+set.seed(123)
+lm_fit <- train(Bottles.Sold ~ Bottle.Volume..ml. + State.Bottle.Retail + Sale..Dollars. + Pack, data=df,trControl=fitControl,method ="lm")
+print(lm_fit)
+```
+
+##_________________________________________________________________##
+
+#Use GBM train function for Bottles.Sold
+
+#This Section would crash the knitting process
+
+```{r}
+set.seed(123)
+gbm_fit <- train(Bottles.Sold ~ Bottle.Volume..ml. + State.Bottle.Retail + Sale..Dollars. + Pack, data = df[-1],
+                 trControl = fitControl, method = "gbm",
+                 verbose=FALSE)
+
+print(gbm_fit)
+```
+
+Of the last two graphs the gbm is better since it has a higher RMSE and lower Rsquared..
+
+##_________________________________________________________________##
+
+#Use LM train function for Volume.Sold in Gallons
+
+```{r}
+set.seed(123)
+lm_fit2 <- train(Volume.Sold..Gallons. ~ Bottle.Volume..ml. + State.Bottle.Retail + Sale..Dollars. + Bottles.Sold + Pack, data=df,trControl=fitControl,method ="lm")
+print(lm_fit2)
+```
+
+##_________________________________________________________________##
+
+#Use GBM train function for Volume.Sold in Gallons
+
+#This Section would crash the knitting process
+
+```{r}
+set.seed(123)
+gbm_fit2 <- train(Volume.Sold..Gallons. ~ Bottle.Volume..ml. + State.Bottle.Retail + Sale..Dollars. + Bottles.Sold + Pack, data = df[-1],
+                 trControl = fitControl, method = "gbm",
+                 verbose=FALSE)
+
+print(gbm_fit2)
+```
+
+##_________________________________________________________________##
+
+#Sumarize Findings
+
+The regression and predicitve models really helped to backup things we already knew. The first discovery is that the number of bottles sold decreases as the retail price goes up. The margins in this model were very small which we see as showing liquor to be effectivly prices.
+
+The second discovery is that overall larger bottles by ml cost less for the state to purchase. This is probably due to small expensive bottles and having more large bottles of cheap liqour being sold.
